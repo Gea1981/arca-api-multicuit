@@ -1,8 +1,12 @@
 import os
 import subprocess
 import datetime
+import ssl
 from lxml import etree
 from zeep import Client
+from zeep.transports import Transport
+from requests import Session
+from requests.adapters import HTTPAdapter
 from xml.etree import ElementTree as ET
 
 # ------------------------------------------------------------------
@@ -21,7 +25,7 @@ WSDL = WSAA_WSDL_HOMO if ENV == "HOMO" else WSAA_WSDL_PROD
 # servicio (no cambia entre entornos)
 SERVICE = "wsfe"
 
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 def create_tra(service: str) -> bytes:
     """
     Crea el XML de LoginTicketRequest con:
@@ -31,11 +35,8 @@ def create_tra(service: str) -> bytes:
       - service: nombre del servicio (e.g. "wsfe")
     Ambos tiempos en formato 'YYYY-MM-DDThh:mm:ss'
     """
-    # UTC ahora sin microsegundos
     now_utc = datetime.datetime.utcnow().replace(microsecond=0)
-    # restamos 2 minutos para evitar desfases de reloj
     gen_time = now_utc - datetime.timedelta(minutes=2)
-    # expiración 12 horas después del UTC real
     exp_time = now_utc + datetime.timedelta(hours=12)
 
     tra = etree.Element("loginTicketRequest", version="1.0")
@@ -52,6 +53,7 @@ def create_tra(service: str) -> bytes:
         encoding="UTF-8"
     )
 
+# ------------------------------------------------------------------------
 def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     """
     Firma el TRA con OpenSSL y devuelve el CMS en PEM sin delimitadores.
@@ -62,9 +64,9 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     subprocess.run([
         "openssl", "smime", "-sign",
         "-signer", cert_path,
-        "-inkey", key_path,
-        "-in", "TRA.xml",
-        "-out", "TRA.cms",
+        "-inkey",   key_path,
+        "-in",      "TRA.xml",
+        "-out",     "TRA.cms",
         "-outform", "PEM",
         "-nodetach"
     ], check=True)
@@ -73,21 +75,37 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     with open("TRA.cms", "r") as f:
         return "".join(line for line in f if not line.startswith("-----")).strip()
 
+# ------------------------------------------------------------------------
 def call_wsaa(cms: str) -> tuple[str, str]:
     """
-    Llama al WSAA loginCms y extrae token y sign del XML de respuesta.
+    Llama al WSAA loginCms usando un SSLContext con SECLEVEL=1 para
+    permitir DHE-1024. Extrae token y sign del XML de respuesta.
     """
-    client = Client(WSDL)
+    # 1) Creamos un contexto TLS que baje el nivel de seguridad a 1
+    ctx = ssl.create_default_context()
+    ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+
+    # 2) Montamos un Session de requests con este contexto
+    session = Session()
+    session.verify = True
+    session.mount('https://', HTTPAdapter(ssl_context=ctx))
+
+    # 3) Le pasamos esa sesión a Zeep via Transport
+    transport = Transport(session=session)
+    client = Client(wsdl=WSDL, transport=transport)
+
+    # 4) Ejecutamos loginCms
     response = client.service.loginCms(cms)
     xml = ET.fromstring(response.encode("utf-8"))
     token = xml.findtext(".//token")
     sign  = xml.findtext(".//sign")
     return token, sign
 
+# ------------------------------------------------------------------------
 def get_token_sign(cuit: int) -> tuple[str, str]:
     """
     Genera o renueva el token/sign para el CUIT dado,
-    buscando los archivos certs/{cuit}.crt y certs/{cuit}.key.
+    esperando encontrar los archivos certs/{cuit}.crt y certs/{cuit}.key.
     """
     cert_path = f"certs/{cuit}.crt"
     key_path  = f"certs/{cuit}.key"
