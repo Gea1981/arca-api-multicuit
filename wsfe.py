@@ -4,7 +4,7 @@ from models import FacturaRequest
 from wsaa import get_token_sign  # Este archivo lo armamos luego
 
 def emitir_comprobante(data: FacturaRequest):
-    token, sign = get_token_sign()
+    token, sign = get_token_sign(data.cuit_emisor)
 
     wsdl = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL"
     client = Client(wsdl)
