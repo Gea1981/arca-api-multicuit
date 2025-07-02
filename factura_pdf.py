@@ -46,10 +46,15 @@ def generar_pdf(data, resultado):
         cae_vto
     )
 
-    # Ruta de salida
-    pdf_dir = "comprobantes"
+    # Ruta de salida organizada por CUIT
+    pdf_dir = os.path.join("comprobantes", str(data.cuit_emisor))
     os.makedirs(pdf_dir, exist_ok=True)
-    pdf_path = os.path.join(pdf_dir, f"factura_{data.punto_venta}_{nro_cbte}.pdf")
+
+    # Nombre del archivo PDF más descriptivo
+    pdf_path = os.path.join(
+        pdf_dir,
+        f"factura_{data.tipo_comprobante}_{data.punto_venta:04d}_{nro_cbte}.pdf"
+    )
 
     c = canvas.Canvas(pdf_path, pagesize=A4)
     c.setFont("Helvetica", 12)
