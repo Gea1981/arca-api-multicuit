@@ -3,11 +3,10 @@ import datetime
 from lxml import etree
 from zeep import Client
 from xml.etree import ElementTree as ET
+import os
 
-CERT = "certs/certificado.crt"
-PRIVATE_KEY = "certs/privada.key"
 SERVICE = "wsfe"
-WSDL = "https://wsaa.afip.gov.ar/ws/services/LoginCms?WSDL"  # PRODUCCIÓN
+WSDL = "https://wsaa.afip.gov.ar/ws/services/LoginCms?WSDL"
 
 def create_tra(service):
     now = datetime.datetime.now()
@@ -22,14 +21,14 @@ def create_tra(service):
 
     return etree.tostring(tra, pretty_print=True, xml_declaration=True, encoding="UTF-8")
 
-def sign_tra(tra_xml):
+def sign_tra(tra_xml, cert_path, key_path):
     with open("TRA.xml", "wb") as f:
         f.write(tra_xml)
 
     subprocess.run([
         "openssl", "smime", "-sign",
-        "-signer", CERT,
-        "-inkey", PRIVATE_KEY,
+        "-signer", cert_path,
+        "-inkey", key_path,
         "-in", "TRA.xml",
         "-out", "TRA.cms",
         "-outform", "PEM",
@@ -47,7 +46,13 @@ def call_wsaa(cms):
     sign = xml.findtext(".//sign")
     return token, sign
 
-def get_token_sign():
+def get_token_sign(cuit):
+    cert_path = f"certs/{cuit}.crt"
+    key_path = f"certs/{cuit}.key"
+
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        raise Exception(f"No se encontraron archivos .crt/.key para el CUIT {cuit}")
+
     tra = create_tra(SERVICE)
-    cms = sign_tra(tra)
+    cms = sign_tra(tra, cert_path, key_path)
     return call_wsaa(cms)
