@@ -27,6 +27,7 @@ SERVICE = "wsfe"
 # Directorio donde están los certificados .crt / .key
 CERTS_DIR = os.getenv("CERTS_DIR", "certs")
 
+
 # ——————————————————————————————————————————————————————————————
 # 2) Adapter para inyectar nuestro SSLContext en urllib3 (requests)
 # ——————————————————————————————————————————————————————————————
@@ -42,6 +43,7 @@ class TLSAdapter(HTTPAdapter):
             block=block,
             ssl_context=self.ssl_context
         )
+
 
 # ——————————————————————————————————————————————————————————————
 def create_tra(service: str) -> bytes:
@@ -70,6 +72,7 @@ def create_tra(service: str) -> bytes:
         encoding="UTF-8"
     )
 
+
 # ——————————————————————————————————————————————————————————————
 def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     """
@@ -92,6 +95,7 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     with open("TRA.cms", "r") as f:
         return "".join(line for line in f if not line.startswith("-----")).strip()
 
+
 # ——————————————————————————————————————————————————————————————
 def call_wsaa(cms: str) -> tuple[str, str]:
     """
@@ -101,7 +105,7 @@ def call_wsaa(cms: str) -> tuple[str, str]:
     Devuelve (token, sign).
     """
     if ENV == "homo":
-        # 1) SSLContext con SECLEVEL=1 para homologación
+        # SSLContext con SECLEVEL=1 para homologación
         ctx = ssl.create_default_context()
         ctx.set_ciphers("DEFAULT@SECLEVEL=1")
         session = Session()
@@ -109,10 +113,10 @@ def call_wsaa(cms: str) -> tuple[str, str]:
         session.mount("https://", TLSAdapter(ctx))
         transport = Transport(session=session)
     else:
-        # 2) Producción: contexto por defecto
+        # Producción: contexto por defecto
         transport = Transport()
 
-    client   = Client(wsdl=WSDL, transport=transport)
+    client = Client(wsdl=WSDL, transport=transport)
     response = client.service.loginCms(cms)
     xml      = ET.fromstring(response.encode("utf-8"))
     token    = xml.findtext(".//token")
@@ -123,12 +127,12 @@ def call_wsaa(cms: str) -> tuple[str, str]:
 
     return token, sign
 
+
 # ——————————————————————————————————————————————————————————————
 def get_token_sign(cuit: int) -> tuple[str, str]:
     """
-    Punto de entrada: para un CUIT dado, busca
-    certs/{cuit}.crt y certs/{cuit}.key, genera el TRA, lo firma
-    y llama a WSAA.
+    Para un CUIT dado, busca certs/{cuit}.crt y .key,
+    genera el TRA, lo firma y llama a WSAA.
     """
     cert_path = os.path.join(CERTS_DIR, f"{cuit}.crt")
     key_path  = os.path.join(CERTS_DIR, f"{cuit}.key")
