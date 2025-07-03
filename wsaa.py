@@ -9,9 +9,10 @@ from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from xml.etree import ElementTree as ET
+from datetime import timezone
 
 # ——————————————————————————————————————————————————————————————
-# 1) Entorno: homologación vs producción
+# 1) Entorno: 'homo' = homologación / 'prod' = producción
 # ——————————————————————————————————————————————————————————————
 ENV = os.getenv("ENVIRONMENT", "homo").strip().lower()  # "homo" o "prod"
 WSAA_WSDL_HOMO = os.getenv("WSAA_WSDL_HOMO")
@@ -29,7 +30,7 @@ CERTS_DIR = os.getenv("CERTS_DIR", "certs")
 
 
 # ——————————————————————————————————————————————————————————————
-# 2) Adapter para inyectar nuestro SSLContext en urllib3 (requests)
+# Adapter para inyectar nuestro SSLContext en urllib3 (requests)
 # ——————————————————————————————————————————————————————————————
 class TLSAdapter(HTTPAdapter):
     def __init__(self, ssl_context: ssl.SSLContext, **kwargs):
@@ -48,22 +49,25 @@ class TLSAdapter(HTTPAdapter):
 # ——————————————————————————————————————————————————————————————
 def create_tra(service: str) -> bytes:
     """
-    Crea el XML de LoginTicketRequest para WSAA:
-      - uniqueId: segundos desde epoch UTC
-      - generationTime: UTC actual -1 min, sin microsegundos
-      - expirationTime: UTC actual +12 h
-    Ambos tiempos en formato 'YYYY-MM-DDThh:mm:ss'
+    Crea el XML de loginTicketRequest para WSAA:
+      - uniqueId: epoch UTC en segundos
+      - generationTime: UTC actual - 1 minuto, timezone-aware
+      - expirationTime: UTC actual + 12 horas, timezone-aware
+      - service: nombre del servicio (ej. 'wsfe')
+    Ambos tiempos en formato ISO-8601 con offset (p.ej. '2025-07-03T14:25:00+00:00').
     """
-    now = datetime.datetime.utcnow().replace(microsecond=0)
-    gen_time = now - datetime.timedelta(minutes=1)
-    exp_time = now + datetime.timedelta(hours=12)
+    # 1) Hora UTC timezone-aware, sin microsegundos
+    now_utc = datetime.datetime.now(timezone.utc).replace(microsecond=0)
+    # 2) Fechas de generación y expiración
+    gen_time = now_utc - datetime.timedelta(minutes=1)
+    exp_time = now_utc + datetime.timedelta(hours=12)
 
     tra = etree.Element("loginTicketRequest", version="1.0")
     header = etree.SubElement(tra, "header")
-    etree.SubElement(header, "uniqueId"      ).text = str(int(now.timestamp()))
-    etree.SubElement(header, "generationTime").text = gen_time.strftime("%Y-%m-%dT%H:%M:%S")
-    etree.SubElement(header, "expirationTime").text = exp_time.strftime("%Y-%m-%dT%H:%M:%S")
-    etree.SubElement(tra, "service"         ).text = service
+    etree.SubElement(header, "uniqueId").text = str(int(now_utc.timestamp()))
+    etree.SubElement(header, "generationTime").text = gen_time.isoformat()
+    etree.SubElement(header, "expirationTime").text = exp_time.isoformat()
+    etree.SubElement(tra, "service").text = service
 
     return etree.tostring(
         tra,
@@ -76,8 +80,8 @@ def create_tra(service: str) -> bytes:
 # ——————————————————————————————————————————————————————————————
 def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     """
-    Firma el TRA con OpenSSL y devuelve el CMS en PEM SIN
-    las líneas -----BEGIN/END-----.
+    Firma el TRA con OpenSSL y devuelve el CMS en PEM
+    SIN las líneas -----BEGIN/END-----.
     """
     with open("TRA.xml", "wb") as f:
         f.write(tra_xml)
@@ -85,9 +89,9 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     subprocess.run([
         "openssl", "smime", "-sign",
         "-signer", cert_path,
-        "-inkey",   key_path,
-        "-in",      "TRA.xml",
-        "-out",     "TRA.cms",
+        "-inkey", key_path,
+        "-in", "TRA.xml",
+        "-out", "TRA.cms",
         "-outform", "PEM",
         "-nodetach"
     ], check=True)
@@ -99,13 +103,11 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
 # ——————————————————————————————————————————————————————————————
 def call_wsaa(cms: str) -> tuple[str, str]:
     """
-    Llama a WSAA.loginCms. En homologación baja el nivel de
-    seguridad a SECLEVEL=1 para DHE-1024; en prod usa el contexto
-    por defecto (SECLEVEL>=2).
+    Llama a WSAA.loginCms. En homologación baja a SECLEVEL=1
+    (para DHE-1024); en prod usa el contexto por defecto.
     Devuelve (token, sign).
     """
     if ENV == "homo":
-        # SSLContext con SECLEVEL=1 para homologación
         ctx = ssl.create_default_context()
         ctx.set_ciphers("DEFAULT@SECLEVEL=1")
         session = Session()
@@ -113,10 +115,9 @@ def call_wsaa(cms: str) -> tuple[str, str]:
         session.mount("https://", TLSAdapter(ctx))
         transport = Transport(session=session)
     else:
-        # Producción: contexto por defecto
         transport = Transport()
 
-    client = Client(wsdl=WSDL, transport=transport)
+    client   = Client(wsdl=WSDL, transport=transport)
     response = client.service.loginCms(cms)
     xml      = ET.fromstring(response.encode("utf-8"))
     token    = xml.findtext(".//token")
