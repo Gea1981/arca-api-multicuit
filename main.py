@@ -26,7 +26,7 @@ def emitir_factura(data: FacturaRequest):
         # 1) Emitir en AFIP
         resultado = emitir_comprobante(data)
 
-        # 2) Generar PDF y obtener ruta (string)
+        # 2) Generar PDF y obtener ruta
         pdf_path = generar_pdf(data, resultado)
 
         # 3) Inyectar la ruta en el dict que guardaremos en BD
@@ -35,7 +35,7 @@ def emitir_factura(data: FacturaRequest):
         # 4) Guardar en la base de datos
         guardar_comprobante(data, resultado)
 
-        # 5) Devolver sólo datos serializables
+        # 5) Devolver al cliente
         return {
             "cae": resultado["cae"],
             "vencimiento": resultado["cae_vencimiento"],
@@ -46,16 +46,15 @@ def emitir_factura(data: FacturaRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get(
-    "/comprobante/{cuit}/{punto_venta}/{nro}",
+    "/comprobante/{cuit}/{pto}/{nro}",
     summary="Descarga el PDF de un comprobante existente"
 )
-def descargar_pdf(cuit: int, punto_venta: int, nro: int):
+def descargar_pdf(cuit: int, pto: int, nro: int):
     """
-    Devuelve el PDF correspondiente al comprobante:
-      comprobantes/{cuit}/factura_{tipo}_{pto:04d}_{nro}.pdf
+    Devuelve el PDF generado para:
+      comprobantes/{cuit}/factura_{pto:04d}_{nro}.pdf
     """
-    # Ajusta el patrón de nombre según tu generar_pdf
-    filename = f"factura_{punto_venta:04d}_{nro}.pdf"
+    filename = f"factura_{pto:04d}_{nro}.pdf"
     path = os.path.join("comprobantes", str(cuit), filename)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="PDF no encontrado")
