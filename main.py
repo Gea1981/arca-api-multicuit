@@ -13,15 +13,19 @@ def root():
 @app.post("/emitir")
 def emitir_factura(data: FacturaRequest):
     try:
-        # Emitir con AFIP
+        # 1) Emitir con AFIP (devuelve dict con 'cae', 'cae_vencimiento' y 'numero_comprobante')
         resultado = emitir_comprobante(data)
 
-        # Guardar en DB
-        guardar_comprobante(data, resultado)
-
-        # Generar PDF con QR
+        # 2) Generar PDF con QR y obtener la ruta
         pdf_path = generar_pdf(data, resultado)
 
+        # 3) Inyectar el pdf_path dentro del dict para que luego lo guarde la función DB
+        resultado['pdf_path'] = pdf_path
+
+        # 4) Guardar todo en la base de datos (ahora 'resultado' incluye pdf_path)
+        guardar_comprobante(data, resultado)
+
+        # 5) Devolver al cliente la info
         return {
             "cae": resultado['cae'],
             "vencimiento": resultado['cae_vencimiento'],
@@ -29,4 +33,5 @@ def emitir_factura(data: FacturaRequest):
         }
 
     except Exception as e:
+        # En caso de error devolvemos 500 con detalle
         raise HTTPException(status_code=500, detail=str(e))
