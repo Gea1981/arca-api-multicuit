@@ -23,27 +23,28 @@ def root():
 )
 def emitir_factura(data: FacturaRequest):
     try:
-        # 1) Emitir en AFIP
+        # 1) Emitimos el comprobante en AFIP
         resultado = emitir_comprobante(data)
 
-        # 2) Generar PDF y obtener ruta
+        # 2) Generamos el PDF y obtenemos la ruta
         pdf_path = generar_pdf(data, resultado)
 
-        # 3) Inyectar la ruta en el dict que guardaremos en BD
+        # 3) Inyectamos esa ruta en el dict para guardarlo en la BD
         resultado["pdf_path"] = pdf_path
 
-        # 4) Guardar en la base de datos
+        # 4) Guardamos en la base de datos (incluye pdf_path)
         guardar_comprobante(data, resultado)
 
-        # 5) Devolver al cliente
-        return {
-            "cae": resultado["cae"],
-            "vencimiento": resultado["cae_vencimiento"],
-            "pdf": pdf_path
-        }
+        # 5) Devolvemos el response model
+        return FacturaResponse(
+            cae=resultado["cae"],
+            vencimiento=resultado["cae_vencimiento"],
+            pdf=pdf_path
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get(
     "/comprobante/{cuit}/{pto}/{nro}",
@@ -51,7 +52,7 @@ def emitir_factura(data: FacturaRequest):
 )
 def descargar_pdf(cuit: int, pto: int, nro: int):
     """
-    Devuelve el PDF generado para:
+    Sirve desde disco:
       comprobantes/{cuit}/factura_{pto:04d}_{nro}.pdf
     """
     filename = f"factura_{pto:04d}_{nro}.pdf"
