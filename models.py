@@ -12,6 +12,8 @@ class FacturaRequest(BaseModel):
     iva: float
     total: float
     fecha_emision: date
+
+class FacturaResponse(BaseModel):
     cae: str
     vencimiento: date
-    pdf: str  # ruta al PDF generado
+    pdf: str  # Ruta al PDF generado, relativa al servidor
