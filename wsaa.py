@@ -2,6 +2,7 @@ import os
 import subprocess
 import datetime
 import ssl
+from zoneinfo import ZoneInfo
 from lxml import etree
 from zeep import Client
 from zeep.transports import Transport
@@ -24,7 +25,7 @@ WSDL = WSAA_WSDL_HOMO if ENV == "HOMO" else WSAA_WSDL_PROD
 SERVICE = "wsfe"
 
 # ------------------------------------------------------------
-# Un Adapter custom para inyectar nuestro SSLContext en urllib3
+# Adapter custom para inyectar nuestro SSLContext en urllib3
 # ------------------------------------------------------------
 class TLSAdapter(HTTPAdapter):
     def __init__(self, ssl_context: ssl.SSLContext, **kwargs):
@@ -44,20 +45,25 @@ class TLSAdapter(HTTPAdapter):
 def create_tra(service: str) -> bytes:
     """
     Crea el XML de LoginTicketRequest con:
-      - uniqueId: timestamp en segundos (UTC)
-      - generationTime: UTC ahora - 2 minutos, formato 'YYYY-MM-DDThh:mm:ss'
-      - expirationTime: UTC ahora + 12 horas, mismo formato
+      - uniqueId: timestamp en segundos (ARG local)
+      - generationTime: local ARG actual - 1 minuto, con offset '-03:00'
+      - expirationTime: local ARG actual + 12 horas, con offset '-03:00'
       - service: nombre del servicio (ej. 'wsfe')
     """
-    now_utc = datetime.datetime.utcnow().replace(microsecond=0)
-    gen_time = now_utc - datetime.timedelta(minutes=2)
-    exp_time = now_utc + datetime.timedelta(hours=12)
+    # zona horaria Argentina
+    tz = ZoneInfo("America/Argentina/Buenos_Aires")
+    now = datetime.datetime.now(tz).replace(microsecond=0)
+    gen_time = now - datetime.timedelta(minutes=1)
+    exp_time = now + datetime.timedelta(hours=12)
 
     tra = etree.Element("loginTicketRequest", version="1.0")
     header = etree.SubElement(tra, "header")
-    etree.SubElement(header, "uniqueId").text = str(int(now_utc.timestamp()))
-    etree.SubElement(header, "generationTime").text = gen_time.strftime("%Y-%m-%dT%H:%M:%S")
-    etree.SubElement(header, "expirationTime").text = exp_time.strftime("%Y-%m-%dT%H:%M:%S")
+    # uniqueId como segundos desde epoch UTC:
+    unique_id = str(int(now.timestamp()))
+    etree.SubElement(header, "uniqueId").text = unique_id
+    # isoformat() ya incluye '-03:00'
+    etree.SubElement(header, "generationTime").text = gen_time.isoformat()
+    etree.SubElement(header, "expirationTime").text = exp_time.isoformat()
     etree.SubElement(tra, "service").text = service
 
     return etree.tostring(
@@ -86,20 +92,21 @@ def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
         "-nodetach"
     ], check=True)
 
+    # Leemos y filtramos líneas '-----BEGIN/END-----'
     with open("TRA.cms", "r") as f:
         return "".join(line for line in f if not line.startswith("-----")).strip()
 
 # ------------------------------------------------------------
 def call_wsaa(cms: str) -> tuple[str, str]:
     """
-    Llama a WSAA.loginCms usando nuestro SSLContext SECLEVEL=1
-    (permite DHE-1024). Retorna (token, sign).
+    Llama a WSAA.loginCms usando un SSLContext SECLEVEL=1
+    para permitir DHE-1024. Retorna (token, sign).
     """
-    # 1) Creamos contexto OpenSSL con SECLEVEL=1
+    # 1) Contexto OpenSSL con SECLEVEL=1
     ctx = ssl.create_default_context()
     ctx.set_ciphers("DEFAULT@SECLEVEL=1")
 
-    # 2) Montamos una Session de requests con nuestro TLSAdapter
+    # 2) Session de requests con nuestro adapter
     session = Session()
     session.verify = True
     session.mount("https://", TLSAdapter(ctx))
