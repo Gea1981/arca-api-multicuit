@@ -1,29 +1,37 @@
+import os
+import ssl
+import urllib3
+import logging
+
+# Configuración SSL agresiva para AFIP
+os.environ['PYTHONHTTPSVERIFY'] = '0'
+os.environ['OPENSSL_CONF'] = '/dev/null'
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# Parche global para requests
+import requests.adapters
+import urllib3.util.ssl_
+original_create_urllib3_context = urllib3.util.ssl_.create_urllib3_context
+
+def create_urllib3_context(ciphers=None, cert_reqs=ssl.CERT_NONE, **kwargs):
+    ctx = original_create_urllib3_context(ciphers, cert_reqs, **kwargs)
+    ctx.set_ciphers('DEFAULT@SECLEVEL=0')
+    return ctx
+
+urllib3.util.ssl_.create_urllib3_context = create_urllib3_context
+urllib3.disable_warnings()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from models import FacturaRequest, FacturaResponse
 from wsfe import emitir_comprobante
 from db import guardar_comprobante
 from factura_pdf import generar_pdf
-import os
-import ssl
-import urllib3
-import logging
-import os
-os.environ['OPENSSL_CONF'] = '/dev/null'
-
-# Configuración SSL permisiva para AFIP
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-ssl._create_default_https_context = ssl._create_unverified_context
-
-# O configurar contexto SSL más permisivo
-ssl_context = ssl.create_default_context()
-ssl_context.set_ciphers('DEFAULT:@SECLEVEL=1')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info("Configuración SSL agresiva aplicada para AFIP")
 
-# Después de la configuración SSL
-logger.info("Configuración SSL aplicada para AFIP")
 app = FastAPI(
     title="API AFIP Multicuit",
     version="1.0",
@@ -43,26 +51,20 @@ def emitir_factura(data: FacturaRequest):
     try:
         # 1) Emitimos el comprobante en AFIP
         resultado = emitir_comprobante(data)
-
         # 2) Generamos el PDF y obtenemos la ruta
         pdf_path = generar_pdf(data, resultado)
-
         # 3) Inyectamos esa ruta en el dict para guardarlo en la BD
         resultado["pdf_path"] = pdf_path
-
         # 4) Guardamos en la base de datos (incluye pdf_path)
         guardar_comprobante(data, resultado)
-
         # 5) Devolvemos el response model
         return FacturaResponse(
             cae=resultado["cae"],
             vencimiento=resultado["cae_vencimiento"],
             pdf=pdf_path
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get(
     "/comprobante/{cuit}/{pto}/{nro}",
