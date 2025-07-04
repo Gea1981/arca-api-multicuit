@@ -8,6 +8,8 @@ import os
 import ssl
 import urllib3
 import logging
+import os
+os.environ['OPENSSL_CONF'] = '/dev/null'
 
 # Configuración SSL permisiva para AFIP
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
