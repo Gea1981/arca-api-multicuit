@@ -5,7 +5,23 @@ from wsfe import emitir_comprobante
 from db import guardar_comprobante
 from factura_pdf import generar_pdf
 import os
+import ssl
+import urllib3
+import logging
 
+# Configuración SSL permisiva para AFIP
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# O configurar contexto SSL más permisivo
+ssl_context = ssl.create_default_context()
+ssl_context.set_ciphers('DEFAULT:@SECLEVEL=1')
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Después de la configuración SSL
+logger.info("Configuración SSL aplicada para AFIP")
 app = FastAPI(
     title="API AFIP Multicuit",
     version="1.0",
