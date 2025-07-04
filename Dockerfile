@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
     libxmlsec1-dev \
     libxmlsec1-openssl \
     pkg-config \
- && sed -i 's/CipherString = DEFAULT@SECLEVEL=2/CipherString = DEFAULT@SECLEVEL=1/' /etc/ssl/openssl.cnf \
+ && echo "CipherString = DEFAULT@SECLEVEL=1" >> /etc/ssl/openssl.cnf \
+ && echo "MinProtocol = TLSv1.2" >> /etc/ssl/openssl.cnf \
  && apt-get clean
 
 # Copiamos todo el código al contenedor
