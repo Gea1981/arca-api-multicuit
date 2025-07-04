@@ -111,7 +111,7 @@ def call_wsaa(cms: str) -> tuple[str, str]:
         ctx = ssl.create_default_context()
         ctx.set_ciphers("DEFAULT@SECLEVEL=1")
         session = Session()
-        session.verify = True
+        session.verify = False
         session.mount("https://", TLSAdapter(ctx))
         transport = Transport(session=session)
     else:
