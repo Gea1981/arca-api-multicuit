@@ -13,11 +13,11 @@ import requests.adapters
 import urllib3.util.ssl_
 original_create_urllib3_context = urllib3.util.ssl_.create_urllib3_context
 
-def create_urllib3_context(ciphers=None, cert_reqs=ssl.CERT_NONE, **kwargs):
-    ctx = original_create_urllib3_context(ciphers, cert_reqs, **kwargs)
-    ctx.set_ciphers('DEFAULT@SECLEVEL=0')
+def create_urllib3_context(ciphers=None, cert_reqs=ssl.CERT_REQUIRED, **kwargs):
+    ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_ciphers('DEFAULT@SECLEVEL=0')
     return ctx
 
 urllib3.util.ssl_.create_urllib3_context = create_urllib3_context
