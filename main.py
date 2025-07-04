@@ -6,20 +6,20 @@ import logging
 # Configuración SSL agresiva para AFIP
 os.environ['PYTHONHTTPSVERIFY'] = '0'
 os.environ['OPENSSL_CONF'] = '/dev/null'
-ssl._create_default_https_context = ssl._create_unverified_context
 
-# Parche global para requests - versión simplificada
-import requests.adapters
-import urllib3.util.ssl_
-
-def create_urllib3_context(*args, **kwargs):
-    ctx = ssl.create_default_context()
+# Crear contexto SSL completamente inseguro
+def create_insecure_context():
+    ctx = ssl.SSLContext()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     ctx.set_ciphers('DEFAULT@SECLEVEL=0')
     return ctx
 
-urllib3.util.ssl_.create_urllib3_context = create_urllib3_context
+ssl._create_default_https_context = create_insecure_context
+
+# Parche para urllib3
+import urllib3.util.ssl_
+urllib3.util.ssl_.create_urllib3_context = create_insecure_context
 urllib3.disable_warnings()
 
 from fastapi import FastAPI, HTTPException
