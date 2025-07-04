@@ -51,7 +51,7 @@ def emitir_comprobante(data: FacturaRequest):
 
     # 2) Creamos cliente Zeep con nuestro TLSAdapter
     session = Session()
-    session.verify = True
+    session.verify = False
     session.mount("https://", TLSAdapter(_CTX))
     transport = Transport(session=session)
     client = Client(wsdl=WSDL, transport=transport)
