@@ -16,6 +16,8 @@ original_create_urllib3_context = urllib3.util.ssl_.create_urllib3_context
 def create_urllib3_context(ciphers=None, cert_reqs=ssl.CERT_NONE, **kwargs):
     ctx = original_create_urllib3_context(ciphers, cert_reqs, **kwargs)
     ctx.set_ciphers('DEFAULT@SECLEVEL=0')
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 urllib3.util.ssl_.create_urllib3_context = create_urllib3_context
