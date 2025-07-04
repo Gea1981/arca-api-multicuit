@@ -8,12 +8,11 @@ os.environ['PYTHONHTTPSVERIFY'] = '0'
 os.environ['OPENSSL_CONF'] = '/dev/null'
 ssl._create_default_https_context = ssl._create_unverified_context
 
-# Parche global para requests
+# Parche global para requests - versión simplificada
 import requests.adapters
 import urllib3.util.ssl_
-original_create_urllib3_context = urllib3.util.ssl_.create_urllib3_context
 
-def create_urllib3_context(ciphers=None, cert_reqs=ssl.CERT_REQUIRED, **kwargs):
+def create_urllib3_context(*args, **kwargs):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
