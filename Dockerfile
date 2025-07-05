@@ -22,15 +22,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt
 
-# Ahora copiamos el resto del código
-COPY . .
+# Copiamos el código fuente de la aplicación desde la carpeta 'src' del host
+# al directorio de trabajo '/app' en el contenedor.
+# Esto simplifica la estructura dentro del contenedor (ej. /app/main.py)
+COPY src/ .
 
-# Creamos un usuario no-root para correr la aplicación
+# Creamos un usuario no-root para correr la aplicación por seguridad
 RUN useradd -m appuser
 USER appuser
 
 # Exponemos el puerto en el que corre Uvicorn
 EXPOSE 8000
 
-# Comando por defecto
+# Comando para ejecutar la aplicación. Como copiamos el contenido de 'src' a '/app',
+# el archivo main.py está en la raíz del directorio de trabajo.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
