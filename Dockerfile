@@ -3,15 +3,17 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Instalar herramientas del sistema necesarias para compilar dependencias
-RUN apt-get update && apt-get install -y \
+# Usamos --no-install-recommends para una imagen más ligera y limpiamos la caché de apt
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     build-essential \
     libxml2-dev \
     libxmlsec1-dev \
-    libxmlsec1-openssl \ # Necesaria para xmlsec
-    pkg-config \ 
- && apt-get clean
+    libxmlsec1-openssl \
+    pkg-config \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
 # Copiamos solo el archivo de dependencias para aprovechar el cache de Docker
 COPY requirements.txt .
