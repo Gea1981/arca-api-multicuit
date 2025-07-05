@@ -9,7 +9,7 @@ conf.CERT_PATH        = os.getenv('CERT_PATH', '/app/27371046211.crt')
 conf.PRIVATE_KEY_PATH = os.getenv('KEY_PATH', '/app/27371046211.key')
 conf.TA_FILES_PATH    = os.getenv('TA_PATH', '/app/ta')
 conf.CUIT             = os.getenv('CUIT', '27371046211')
-conf.PROD             = os.getenv('PROD', 'false').lower() in ('true','1','yes')
+conf.PROD             = os.getenv('PROD', 'true').lower() in ('true','1','yes')
 
 app = FastAPI()
 
