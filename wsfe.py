@@ -8,19 +8,14 @@ from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from models import FacturaRequest
 from wsaa import get_token_sign, TLSAdapter, get_afip_ssl_context
+from config import settings
 
 # ------------------------------------------------------------
-# 1) Modo de la API: 'HOMO' = homologación / 'PROD' = producción
+# 1) El modo y los endpoints se leen desde el objeto de settings.
+#    Pydantic ya se encargó de leer el .env y validar al inicio.
 # ------------------------------------------------------------
-ENV = os.getenv("ENVIRONMENT", "homo").strip().lower()  # "homo" o "prod"
-
-WSFE_WSDL_HOMO = os.getenv("WSFE_WSDL_HOMO")
-WSFE_WSDL_PROD = os.getenv("WSFE_WSDL_PROD")
-if not WSFE_WSDL_HOMO or not WSFE_WSDL_PROD:
-    raise RuntimeError("Faltan WSFE_WSDL_HOMO o WSFE_WSDL_PROD en el .env")
-
 # Elegimos el endpoint según el modo
-WSDL = WSFE_WSDL_HOMO if ENV == "homo" else WSFE_WSDL_PROD
+WSDL = settings.WSFE_WSDL_HOMO if settings.ENVIRONMENT == "homo" else settings.WSFE_WSDL_PROD
 
 def emitir_comprobante(data: FacturaRequest):
     """
