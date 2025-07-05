@@ -15,6 +15,7 @@ app = FastAPI()
 
 @app.get("/ultimo")
 def ultimo_cbte():
-    ws = ArcaWebService(wsdl=conf.WSDL_FEV1_HOM)
+    # Instanciación corregida:
+    ws = ArcaWebService(conf.WSDL_FEV1_HOM, 'wsfe')
     ultimo = ws.FECompUltimoAutorizado(tipo_cbte=1, punto_vta=1, id_cbte=0)
     return {"ultimo_comprobante": ultimo}
