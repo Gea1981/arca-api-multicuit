@@ -1,11 +1,4 @@
-fastapi
-uvicorn[standard]
-psycopg2-binary
-zeep
-lxml
-cryptography
-pydantic
-pydantic-settings
-reportlab
-qrcode[pil]
-requests
+arca_arg>=1.0.1
+zeep>=5.0.0
+cryptography>=41.0.0
+python-dateutil>=2.8.2
