@@ -7,7 +7,7 @@ from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from models import FacturaRequest
-from wsaa import get_token_sign, TLSAdapter
+from wsaa import get_token_sign, TLSAdapter, get_afip_ssl_context
 
 # ------------------------------------------------------------
 # 1) Modo de la API: 'HOMO' = homologación / 'PROD' = producción
@@ -21,20 +21,6 @@ if not WSFE_WSDL_HOMO or not WSFE_WSDL_PROD:
 
 # Elegimos el endpoint según el modo
 WSDL = WSFE_WSDL_HOMO if ENV == "homo" else WSFE_WSDL_PROD
-
-def _build_ssl_context() -> ssl.SSLContext:
-    """
-    Crea un SSLContext. En HOMO baja el nivel a SECLEVEL=1
-    para permitir DHE-1024; en PROD deja el contexto por defecto
-    (SECLEVEL>=2).
-    """
-    ctx = ssl.create_default_context()
-    if ENV == "homo":
-        ctx.set_ciphers("DEFAULT@SECLEVEL=1")
-    return ctx
-
-# Creamos una sola vez el contexto
-_CTX = _build_ssl_context()
 
 def emitir_comprobante(data: FacturaRequest):
     """
@@ -51,8 +37,7 @@ def emitir_comprobante(data: FacturaRequest):
 
     # 2) Creamos cliente Zeep con nuestro TLSAdapter
     session = Session()
-    session.verify = False
-    session.mount("https://", TLSAdapter(_CTX))
+    session.mount("https://", TLSAdapter(get_afip_ssl_context()))
     transport = Transport(session=session)
     client = Client(wsdl=WSDL, transport=transport)
 

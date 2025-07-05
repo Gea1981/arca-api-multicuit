@@ -1,7 +1,6 @@
 import os
 import psycopg2
-from psycopg2 import sql, OperationalError, Error
-from factura_pdf import generar_qr_base64  # Debe devolver bytes
+from psycopg2 import sql, pool, Error
 from models import FacturaRequest
 import base64
 
@@ -25,38 +24,36 @@ if not all(required):
     ] if not val]
     raise RuntimeError(f"Faltan variables de entorno de BD: {', '.join(missing)}")
 
+# ————————————————————————————————————————————————
+# 2) Creamos un pool de conexiones para reutilizarlas
+# ————————————————————————————————————————————————
+try:
+    db_pool = psycopg2.pool.SimpleConnectionPool(
+        minconn=1,
+        maxconn=10, # Ajusta según la carga esperada
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASS,
+        dbname=DB_NAME,
+        port=DB_PORT,
+        sslmode=DB_SSLMODE
+    )
+except psycopg2.OperationalError as e:
+    raise RuntimeError(f"Error creando el pool de conexiones a la BD: {e}")
+
 # ————————————————————————————————————————————————  
-def guardar_comprobante(data: FacturaRequest, resultado: dict):
+def guardar_comprobante(data: FacturaRequest, resultado: dict, pdf_path: str, qr_bytes: bytes):
     """
     Inserta en la tabla 'comprobantes' todos los datos de la factura,
     el CAE, el QR en base64 y la ruta del PDF generado.
     """
-    # 1) Conexión a la BD
+    conn = None
     try:
-        conn = psycopg2.connect(
-            host     = DB_HOST,
-            user     = DB_USER,
-            password = DB_PASS,
-            dbname   = DB_NAME,
-            port     = DB_PORT,
-            sslmode  = DB_SSLMODE
-        )
-    except OperationalError as e:
-        raise RuntimeError(f"Error conectando a la base de datos: {e}")
-
-    try:
-        with conn:
+        # 1) Obtenemos una conexión del pool
+        conn = db_pool.getconn()
+        with conn: # El bloque 'with conn' maneja commit/rollback automáticamente
             with conn.cursor() as cur:
-                # 2) Generar QR en base64 (la función acepta 7 args)
-                qr_bytes  = generar_qr_base64(
-                    data.cuit_emisor,
-                    data.tipo_comprobante,
-                    data.punto_venta,
-                    resultado["numero_comprobante"],
-                    data.total,
-                    resultado["cae"],
-                    resultado["cae_vencimiento"]
-                )
+                # 2) Codificar el QR (ya generado) a base64
                 qr_base64 = base64.b64encode(qr_bytes).decode()
 
                 # 3) Sentencia parametrizada
@@ -111,7 +108,7 @@ def guardar_comprobante(data: FacturaRequest, resultado: dict):
                     "cae":           resultado["cae"],
                     "cae_vto":       resultado["cae_vencimiento"],
                     "qr":            qr_base64,
-                    "pdf_path":      resultado["pdf_path"],
+                    "pdf_path":      pdf_path,
                 }
 
                 cur.execute(insert_sql, params)
@@ -119,4 +116,6 @@ def guardar_comprobante(data: FacturaRequest, resultado: dict):
     except Error as e:
         raise RuntimeError(f"Error al guardar comprobante en BD: {e}")
     finally:
-        conn.close()
+        # 3) Devolvemos la conexión al pool para que otro la reutilice
+        if conn:
+            db_pool.putconn(conn)

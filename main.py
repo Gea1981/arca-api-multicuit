@@ -1,37 +1,13 @@
 import os
-import ssl
-import urllib3
 import logging
-
-# Configuración SSL agresiva para AFIP
-os.environ['PYTHONHTTPSVERIFY'] = '0'
-os.environ['OPENSSL_CONF'] = '/dev/null'
-
-# Crear contexto SSL completamente inseguro
-def create_insecure_context():
-    ctx = ssl.SSLContext()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    ctx.set_ciphers('DEFAULT@SECLEVEL=0')
-    return ctx
-
-ssl._create_default_https_context = create_insecure_context
-
-# Parche para urllib3
-import urllib3.util.ssl_
-urllib3.util.ssl_.create_urllib3_context = create_insecure_context
-urllib3.disable_warnings()
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from models import FacturaRequest, FacturaResponse
 from wsfe import emitir_comprobante
 from db import guardar_comprobante
 from factura_pdf import generar_pdf
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.info("Configuración SSL agresiva aplicada para AFIP")
 
 app = FastAPI(
     title="API AFIP Multicuit",
@@ -49,22 +25,34 @@ def root():
     summary="Emite un comprobante, lo guarda en BD y genera el PDF"
 )
 def emitir_factura(data: FacturaRequest):
+    resultado_afip = None
     try:
         # 1) Emitimos el comprobante en AFIP
-        resultado = emitir_comprobante(data)
+        resultado_afip = emitir_comprobante(data)
+
         # 2) Generamos el PDF y obtenemos la ruta
-        pdf_path = generar_pdf(data, resultado)
+        pdf_path = generar_pdf(data, resultado_afip)
+
         # 3) Inyectamos esa ruta en el dict para guardarlo en la BD
-        resultado["pdf_path"] = pdf_path
+        resultado_afip["pdf_path"] = pdf_path
+
         # 4) Guardamos en la base de datos (incluye pdf_path)
-        guardar_comprobante(data, resultado)
+        guardar_comprobante(data, resultado_afip)
+
         # 5) Devolvemos el response model
         return FacturaResponse(
-            cae=resultado["cae"],
-            vencimiento=resultado["cae_vencimiento"],
+            cae=resultado_afip["cae"],
+            vencimiento=resultado_afip["cae_vencimiento"],
             pdf=pdf_path
         )
     except Exception as e:
+        # Si la emisión fue exitosa pero algo más falló, lo registramos
+        # para no perder el CAE.
+        if resultado_afip:
+            logger.critical(
+                "¡FALLO CRÍTICO! Se emitió el CAE pero no se pudo guardar en BD o generar el PDF. "
+                f"Datos: {data.model_dump_json()}, Resultado AFIP: {resultado_afip}. Error: {e}"
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get(

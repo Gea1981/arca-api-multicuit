@@ -47,7 +47,7 @@ def generar_qr_base64(
     img.save(buffer, format="PNG")
     return buffer.getvalue()
 
-def generar_pdf(data, resultado) -> str:
+def generar_pdf(data, resultado, qr_img_bytes: bytes) -> str:
     """
     Genera un PDF con los datos de la factura y el QR, lo guarda
     en comprobantes/{cuit_emisor}/factura_{tipo}_{pto}_{nro}.pdf
@@ -56,19 +56,6 @@ def generar_pdf(data, resultado) -> str:
     nro_cbte = resultado["numero_comprobante"]
     cae      = resultado["cae"]
     cae_vto  = resultado["cae_vencimiento"]
-
-    # Generar bytes del QR
-    qr_img = generar_qr_base64(
-        data.cuit_emisor,
-        data.tipo_comprobante,
-        data.punto_venta,
-        nro_cbte,
-        data.total,
-        cae,
-        cae_vto,
-        data.doc_tipo,
-        data.doc_nro
-    )
 
     # Carpeta por CUIT
     pdf_dir = os.path.join("comprobantes", str(data.cuit_emisor))
@@ -93,7 +80,7 @@ def generar_pdf(data, resultado) -> str:
     c.drawString(50, 680, f"Vto. CAE: {cae_vto.strftime('%d/%m/%Y')}")
 
     # Insertar QR
-    c.drawInlineImage(BytesIO(qr_img), 50, 600, width=100, height=100)
+    c.drawInlineImage(BytesIO(qr_img_bytes), 50, 600, width=100, height=100)
     c.save()
 
     return pdf_path

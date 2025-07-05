@@ -1,5 +1,4 @@
 import os
-import subprocess
 import datetime
 import ssl
 from lxml import etree
@@ -10,6 +9,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from xml.etree import ElementTree as ET
 from datetime import timezone
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.serialization import pkcs7
 
 # ——————————————————————————————————————————————————————————————
 # 1) Entorno: 'homo' = homologación / 'prod' = producción
@@ -47,6 +48,24 @@ class TLSAdapter(HTTPAdapter):
 
 
 # ——————————————————————————————————————————————————————————————
+def get_afip_ssl_context() -> ssl.SSLContext:
+    """
+    Crea un SSLContext para la comunicación con AFIP.
+    - Deshabilita la verificación de hostname y certificado.
+    - Establece el nivel de seguridad de OpenSSL a 1 para
+      permitir los ciphers de los servidores de homologación.
+    """
+    # Creamos un contexto que no verifica el certificado
+    # y tampoco el hostname, evitando el error.
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    # AFIP (especialmente en homologación) requiere ciphers antiguos.
+    context.set_ciphers("DEFAULT@SECLEVEL=1")
+    return context
+
+
+# ——————————————————————————————————————————————————————————————
 def create_tra(service: str) -> bytes:
     """
     Crea el XML de loginTicketRequest para WSAA:
@@ -78,26 +97,29 @@ def create_tra(service: str) -> bytes:
 
 
 # ——————————————————————————————————————————————————————————————
-def sign_tra(tra_xml: bytes, cert_path: str, key_path: str) -> str:
+def sign_tra_in_memory(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     """
-    Firma el TRA con OpenSSL y devuelve el CMS en PEM
-    SIN las líneas -----BEGIN/END-----.
+    Firma el TRA en memoria usando la librería cryptography y devuelve
+    el CMS en formato PEM (codificado en base64).
     """
-    with open("TRA.xml", "wb") as f:
-        f.write(tra_xml)
+    # 1. Cargar el certificado y la clave privada
+    with open(cert_path, "rb") as f:
+        cert = serialization.load_pem_x509_certificate(f.read())
+    with open(key_path, "rb") as f:
+        key = serialization.load_pem_private_key(f.read(), password=None)
 
-    subprocess.run([
-        "openssl", "smime", "-sign",
-        "-signer", cert_path,
-        "-inkey", key_path,
-        "-in", "TRA.xml",
-        "-out", "TRA.cms",
-        "-outform", "PEM",
-        "-nodetach"
-    ], check=True)
+    # 2. Construir el objeto CMS/PKCS7
+    options = [pkcs7.PKCS7Options.Binary]
+    builder = pkcs7.PKCS7SignatureBuilder().set_data(tra_xml)
+    signed_data = builder.add_signer(
+        cert, key, hashes.SHA256()
+    ).sign(
+        encoding=serialization.Encoding.SMIME, options=options
+    )
 
-    with open("TRA.cms", "r") as f:
-        return "".join(line for line in f if not line.startswith("-----")).strip()
+    # 3. Extraer el contenido del SMIME (esquivando headers)
+    # El formato que espera AFIP es el base64 puro.
+    return signed_data.split(b"\n\n", 1)[1].replace(b"\n", b"").decode("ascii")
 
 
 # ——————————————————————————————————————————————————————————————
@@ -107,16 +129,11 @@ def call_wsaa(cms: str) -> tuple[str, str]:
     (para DHE-1024); en prod usa el contexto por defecto.
     Devuelve (token, sign).
     """
-    if ENV == "homo":
-        ctx = ssl.create_default_context()
-        ctx.set_ciphers("DEFAULT@SECLEVEL=1")
-        session = Session()
-        session.verify = False
-        session.mount("https://", TLSAdapter(ctx))
-        transport = Transport(session=session)
-    else:
-        transport = Transport()
-
+    # Creamos una sesión de requests y le montamos nuestro adapter
+    # con el contexto SSL customizado para AFIP.
+    session = Session()
+    session.mount("https://", TLSAdapter(get_afip_ssl_context()))
+    transport = Transport(session=session)
     client   = Client(wsdl=WSDL, transport=transport)
     response = client.service.loginCms(cms)
     xml      = ET.fromstring(response.encode("utf-8"))
@@ -142,5 +159,5 @@ def get_token_sign(cuit: int) -> tuple[str, str]:
         raise FileNotFoundError(f"No se encontraron {cert_path} o {key_path}")
 
     tra = create_tra(SERVICE)
-    cms = sign_tra(tra, cert_path, key_path)
+    cms = sign_tra_in_memory(tra, cert_path, key_path)
     return call_wsaa(cms)

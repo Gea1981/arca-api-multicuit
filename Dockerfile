@@ -2,25 +2,30 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Instalar herramientas del sistema y aplicar el fix de seguridad para AFIP
+# Instalar herramientas del sistema necesarias para compilar dependencias
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
     libxml2-dev \
     libxmlsec1-dev \
-    libxmlsec1-openssl \
-    pkg-config \
- && echo "CipherString = DEFAULT@SECLEVEL=1" >> /etc/ssl/openssl.cnf \
- && echo "MinProtocol = TLSv1.2" >> /etc/ssl/openssl.cnf \
+    libxmlsec1-openssl \ # Necesaria para xmlsec
+    pkg-config \ 
  && apt-get clean
 
-# Copiamos todo el código al contenedor
-COPY . .
+# Copiamos solo el archivo de dependencias para aprovechar el cache de Docker
+COPY requirements.txt .
 
 # Instalación de dependencias Python
-RUN pip install --upgrade pip \
- && pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# Ahora copiamos el resto del código
+COPY . .
+
+# Creamos un usuario no-root para correr la aplicación
+RUN useradd -m appuser
+USER appuser
 
 # Exponemos el puerto en el que corre Uvicorn
 EXPOSE 8000
