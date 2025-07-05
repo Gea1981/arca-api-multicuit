@@ -24,22 +24,31 @@ if not all(required):
     ] if not val]
     raise RuntimeError(f"Faltan variables de entorno de BD: {', '.join(missing)}")
 
+db_pool = None
+
 # ————————————————————————————————————————————————
 # 2) Creamos un pool de conexiones para reutilizarlas
 # ————————————————————————————————————————————————
-try:
-    db_pool = psycopg2.pool.SimpleConnectionPool(
-        minconn=1,
-        maxconn=10, # Ajusta según la carga esperada
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASS,
-        dbname=DB_NAME,
-        port=DB_PORT,
-        sslmode=DB_SSLMODE
-    )
-except psycopg2.OperationalError as e:
-    raise RuntimeError(f"Error creando el pool de conexiones a la BD: {e}")
+def connect_to_db():
+    global db_pool
+    try:
+        db_pool = psycopg2.pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=10, # Ajusta según la carga esperada
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASS,
+            dbname=DB_NAME,
+            port=DB_PORT,
+            sslmode=DB_SSLMODE
+        )
+    except psycopg2.OperationalError as e:
+        raise RuntimeError(f"Error creando el pool de conexiones a la BD: {e}")
+
+def close_db_connection():
+    global db_pool
+    if db_pool:
+        db_pool.closeall()
 
 # ————————————————————————————————————————————————  
 def guardar_comprobante(data: FacturaRequest, resultado: dict, pdf_path: str, qr_bytes: bytes):
@@ -48,6 +57,8 @@ def guardar_comprobante(data: FacturaRequest, resultado: dict, pdf_path: str, qr
     el CAE, el QR en base64 y la ruta del PDF generado.
     """
     conn = None
+    if not db_pool:
+        raise RuntimeError("El pool de conexiones a la BD no está inicializado.")
     try:
         # 1) Obtenemos una conexión del pool
         conn = db_pool.getconn()
