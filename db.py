@@ -1,28 +1,9 @@
-import os
+ import os
 import psycopg2
 from psycopg2 import sql, pool, Error
 from models import FacturaRequest
 import base64
-
-# ————————————————————————————————————————————————  
-# 1) Cargamos y validamos las variables de entorno
-# ————————————————————————————————————————————————  
-DB_HOST    = os.getenv("DB_HOST")
-DB_USER    = os.getenv("DB_USER")
-DB_PASS    = os.getenv("DB_PASS")
-DB_NAME    = os.getenv("DB_NAME")
-DB_PORT    = os.getenv("DB_PORT", "5432")
-DB_SSLMODE = os.getenv("DB_SSLMODE", "disable")
-
-required = [DB_HOST, DB_USER, DB_PASS, DB_NAME]
-if not all(required):
-    missing = [name for name, val in [
-        ("DB_HOST", DB_HOST),
-        ("DB_USER", DB_USER),
-        ("DB_PASS", DB_PASS),
-        ("DB_NAME", DB_NAME)
-    ] if not val]
-    raise RuntimeError(f"Faltan variables de entorno de BD: {', '.join(missing)}")
+from config import settings
 
 db_pool = None
 
@@ -35,12 +16,12 @@ def connect_to_db():
         db_pool = psycopg2.pool.SimpleConnectionPool(
             minconn=1,
             maxconn=10, # Ajusta según la carga esperada
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASS,
-            dbname=DB_NAME,
-            port=DB_PORT,
-            sslmode=DB_SSLMODE
+            host=settings.DB_HOST,
+            user=settings.DB_USER,
+            password=settings.DB_PASS,
+            dbname=settings.DB_NAME,
+            port=settings.DB_PORT,
+            sslmode=settings.DB_SSLMODE
         )
     except psycopg2.OperationalError as e:
         raise RuntimeError(f"Error creando el pool de conexiones a la BD: {e}")

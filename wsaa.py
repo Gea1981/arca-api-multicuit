@@ -10,24 +10,14 @@ from urllib3.poolmanager import PoolManager
 from xml.etree import ElementTree as ET
 from datetime import timezone
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography import x509
 from cryptography.hazmat.primitives.serialization import pkcs7
+from config import settings
 
-# ——————————————————————————————————————————————————————————————
-# 1) Entorno: 'homo' = homologación / 'prod' = producción
-# ——————————————————————————————————————————————————————————————
-ENV = os.getenv("ENVIRONMENT", "homo").strip().lower()  # "homo" o "prod"
-WSAA_WSDL_HOMO = os.getenv("WSAA_WSDL_HOMO")
-WSAA_WSDL_PROD = os.getenv("WSAA_WSDL_PROD")
-if not WSAA_WSDL_HOMO or not WSAA_WSDL_PROD:
-    raise RuntimeError("Faltan WSAA_WSDL_HOMO o WSAA_WSDL_PROD en el .env")
-
-WSDL = WSAA_WSDL_HOMO if ENV == "homo" else WSAA_WSDL_PROD
+WSDL = settings.WSAA_WSDL_HOMO if settings.ENVIRONMENT == "homo" else settings.WSAA_WSDL_PROD
 
 # Nombre del servicio AFIP (no cambia)
 SERVICE = "wsfe"
-
-# Directorio donde están los certificados .crt / .key
-CERTS_DIR = os.getenv("CERTS_DIR", "certs")
 
 
 # ——————————————————————————————————————————————————————————————
@@ -104,7 +94,7 @@ def sign_tra_in_memory(tra_xml: bytes, cert_path: str, key_path: str) -> str:
     """
     # 1. Cargar el certificado y la clave privada
     with open(cert_path, "rb") as f:
-        cert = serialization.load_pem_x509_certificate(f.read())
+        cert = x509.load_pem_x509_certificate(f.read())
     with open(key_path, "rb") as f:
         key = serialization.load_pem_private_key(f.read(), password=None)
 
@@ -152,8 +142,8 @@ def get_token_sign(cuit: int) -> tuple[str, str]:
     Para un CUIT dado, busca certs/{cuit}.crt y .key,
     genera el TRA, lo firma y llama a WSAA.
     """
-    cert_path = os.path.join(CERTS_DIR, f"{cuit}.crt")
-    key_path  = os.path.join(CERTS_DIR, f"{cuit}.key")
+    cert_path = os.path.join(settings.CERTS_DIR, f"{cuit}.crt")
+    key_path  = os.path.join(settings.CERTS_DIR, f"{cuit}.key")
 
     if not os.path.exists(cert_path) or not os.path.exists(key_path):
         raise FileNotFoundError(f"No se encontraron {cert_path} o {key_path}")
